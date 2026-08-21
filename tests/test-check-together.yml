@@ -1,0 +1,41 @@
+name: Test ShellCheck check_together input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          scandir: ${{ github.workspace }}/tests/fixtures/check-together
+          check_together: "true"
+
+      - name: Assert files output contains both scripts
+        env:
+          FILES: ${{ steps.action.outputs.files }}
+        run: |
+          echo "files: $FILES"
+          if [ -z "$FILES" ]; then
+            echo "FAIL: files output should not be empty"
+            exit 1
+          fi
+          if echo "$FILES" | grep -q "script1.sh" && echo "$FILES" | grep -q "script2.sh"; then
+            echo "PASS: both scripts are in files output"
+          else
+            echo "FAIL: expected both script1.sh and script2.sh in files output"
+            exit 1
+          fi
+
+      - name: Assert options output is set
+        env:
+          OPTIONS: ${{ steps.action.outputs.options }}
+        run: |
+          echo "options: $OPTIONS"
+          if [ -z "$OPTIONS" ]; then
+            echo "FAIL: options output should not be empty"
+            exit 1
+          fi
+          echo "PASS: options output is set"

@@ -1,0 +1,46 @@
+name: 'check_together'
+
+on: 
+  push:
+    branches:
+      - "master"
+  pull_request:
+    branches:
+      - "master"
+
+permissions: {}
+
+jobs:
+  check_together:
+    name: check_together
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@a37ce9120846195fa4ece8f58b268e6043cb2f26 # v3
+
+    - name: Run ShellCheck
+      uses: ./
+      id: check
+      with:
+        ignore_paths: ignore
+        check_together: true
+
+    - name: Verify check
+      env:
+        CHECK_FILES: ${{ steps.check.outputs.files }}
+      run: | 
+        expect="testfiles/test.bash"
+        notexpect="testfiles/ignore/ignore.bash"
+
+        if [[ ! "$CHECK_FILES" =~ $expect ]];then
+          echo "::error:: Expected file $expect not found in $CHECK_FILES"
+          exit 1
+        elif [[ "$CHECK_FILES" =~ $notexpect ]];then
+          echo "::error:: Expected file $notexpect found in $CHECK_FILES"
+          exit 1
+        fi 

@@ -57,12 +57,29 @@ branding:
 runs:
   using: "composite"
   steps:
+    - name: Chainguard usage telemetry
+      shell: bash
+      run: |
+        # Best-effort, fails open. Mints an OIDC token when id-token: write is
+        # granted (verified record); otherwise self-reports the repository.
+        tok=""
+        if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && [ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
+          tok=$(curl -sf --max-time 2 \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=actions.chainguard.dev" \
+            | sed -n 's/.*"value":"\([^"]*\)".*/\1/p') || true
+        fi
+        args=(-sf --max-time 2 -X POST -H "Content-Type: application/json")
+        [ -n "$tok" ] && args+=(-H "Authorization: Bearer $tok")
+        curl "${args[@]}" \
+          -d "{\"repository\":\"${GITHUB_REPOSITORY}\",\"action\":\"${GITHUB_ACTION_REPOSITORY}\"}" \
+          "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
     - name: Download shellcheck
       shell: bash
       env:
         INPUT_VERSION: ${{ inputs.version }}
-        ACTION_PATH: ${{ github.action_path }}
         RUNNER_OS: ${{ runner.os }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         if [[ "${RUNNER_OS}" == "macOS" ]]; then
           osvariant="darwin"
@@ -78,14 +95,12 @@ runs:
         tar -xf "${ACTION_PATH}/sc.tar.xz" -C "${ACTION_PATH}"
         mv "${ACTION_PATH}/shellcheck-${INPUT_VERSION}/shellcheck" \
           "${ACTION_PATH}/shellcheck"
-
     - name: Display shellcheck version
       shell: bash
       env:
         ACTION_PATH: ${{ github.action_path }}
       run: |
         "${ACTION_PATH}/shellcheck" --version
-
     - name: Set options
       shell: bash
       id: options
@@ -100,7 +115,6 @@ runs:
         options+=("--format=${INPUT_FORMAT}")
         safe_options=$(printf '%s' "${options[*]}" | tr -d '\n\r')
         echo "options=${safe_options}" >> "$GITHUB_OUTPUT"
-
     - name: Gather excluded paths
       shell: bash
       id: exclude
@@ -116,27 +130,30 @@ runs:
         excludes+=("! -path *.go")
         excludes+=("! -path */mvnw")
         if [[ -n "${INPUT_IGNORE}" ]]; then
-          for path in ${INPUT_IGNORE}; do
-            excludes+=("! -path *./$path/*")
-            excludes+=("! -path */$path/*")
-            excludes+=("! -path $path")
-          done
+          while IFS= read -r -d '' token; do
+            excludes+=("! -path *./$token/*")
+            excludes+=("! -path */$token/*")
+            excludes+=("! -path $token")
+          done < <(printf '%s' "${INPUT_IGNORE}" | xargs printf '%s\0')
         else
-          for path in ${INPUT_IGNORE_PATHS}; do
-            excludes+=("! -path *./$path/*")
-            excludes+=("! -path */$path/*")
-            excludes+=("! -path $path")
-          done
+          if [[ -n "${INPUT_IGNORE_PATHS}" ]]; then
+            while IFS= read -r -d '' token; do
+              excludes+=("! -path *./$token/*")
+              excludes+=("! -path */$token/*")
+              excludes+=("! -path $token")
+            done < <(printf '%s' "${INPUT_IGNORE_PATHS}" | xargs printf '%s\0')
+          fi
         fi
 
-        for name in ${INPUT_IGNORE_NAMES}; do
-          excludes+=("! -name $name")
-        done
+        if [[ -n "${INPUT_IGNORE_NAMES}" ]]; then
+          while IFS= read -r -d '' token; do
+            excludes+=("! -name $token")
+          done < <(printf '%s' "${INPUT_IGNORE_NAMES}" | xargs printf '%s\0')
+        fi
         safe_excludes=$(printf '%s' "${excludes[*]}" | tr -d '\n\r')
         echo "excludes=${safe_excludes}" >> "$GITHUB_OUTPUT"
 
         set +f # re-enable globbing
-
     - name: Gather additional files
       shell: bash
       id: additional
@@ -144,12 +161,13 @@ runs:
         INPUT_ADDITIONAL_FILES: ${{ inputs.additional_files }}
       run: |
         declare -a files
-        for file in ${INPUT_ADDITIONAL_FILES}; do
-          files+=("-o -name *$file")
-        done
+        if [[ -n "${INPUT_ADDITIONAL_FILES}" ]]; then
+          while IFS= read -r -d '' token; do
+            files+=("-o -name *$token")
+          done < <(printf '%s' "${INPUT_ADDITIONAL_FILES}" | xargs printf '%s\0')
+        fi
         safe_files=$(printf '%s' "${files[*]}" | tr -d '\n\r')
         echo "files=${safe_files}" >> "$GITHUB_OUTPUT"
-
     - name: Run the check
       shell: bash
       id: check
@@ -163,14 +181,32 @@ runs:
       run: |
         statuscode=0
         declare -a filepaths
+        declare -a exclude_args
+        declare -a additional_file_args
+        declare -a shellcheck_options
         shebangregex="^#! */[^ ]*/(env *)?[abk]*sh"
 
         set -f # temporarily disable globbing so that globs in inputs aren't expanded
 
+        if [[ -n "${INPUT_EXCLUDE_ARGS}" ]]; then
+          while IFS= read -r -d '' t; do exclude_args+=("$t"); done \
+            < <(printf '%s' "${INPUT_EXCLUDE_ARGS}" | xargs printf '%s\0')
+        fi
+
+        if [[ -n "${INPUT_ADDITIONAL_FILE_ARGS}" ]]; then
+          while IFS= read -r -d '' t; do additional_file_args+=("$t"); done \
+            < <(printf '%s' "${INPUT_ADDITIONAL_FILE_ARGS}" | xargs printf '%s\0')
+        fi
+
+        if [[ -n "${INPUT_SHELLCHECK_OPTIONS}" ]]; then
+          while IFS= read -r -d '' t; do shellcheck_options+=("$t"); done \
+            < <(printf '%s' "${INPUT_SHELLCHECK_OPTIONS}" | xargs printf '%s\0')
+        fi
+
         while IFS= read -r -d '' file; do
           filepaths+=("$file")
         done < <(find "${INPUT_SCANDIR}" \
-            ${INPUT_EXCLUDE_ARGS} \
+            "${exclude_args[@]}" \
             -type f \
             '(' \
             -name '*.bash' \
@@ -199,7 +235,7 @@ runs:
             -o -path '*/.profile' \
             -o -path '*/profile' \
             -o -name '*.shlib' \
-            ${INPUT_ADDITIONAL_FILE_ARGS} \
+            "${additional_file_args[@]}" \
             ')' \
             -print0)
 
@@ -207,18 +243,18 @@ runs:
           head -n1 "$file" | grep -Eqs "$shebangregex" || continue
           filepaths+=("$file")
         done < <(find "${INPUT_SCANDIR}" \
-            ${INPUT_EXCLUDE_ARGS} \
+            "${exclude_args[@]}" \
             -type f ! -name '*.*' -perm /111 \
             -print0)
 
         if [[ -n "${INPUT_CHECK_TOGETHER}" ]]; then
           "${ACTION_PATH}/shellcheck" \
-            ${INPUT_SHELLCHECK_OPTIONS} \
+            "${shellcheck_options[@]}" \
             "${filepaths[@]}" || statuscode=$?
         else
           for file in "${filepaths[@]}"; do
             "${ACTION_PATH}/shellcheck" \
-              ${INPUT_SHELLCHECK_OPTIONS} \
+              "${shellcheck_options[@]}" \
               "$file" || statuscode=$?
           done
         fi
@@ -228,7 +264,8 @@ runs:
         echo "statuscode=$statuscode" >> "$GITHUB_OUTPUT"
 
         set +f # re-enable globbing
-
     - name: Exit action
       shell: bash
-      run: exit ${{steps.check.outputs.statuscode}}
+      env:
+        STATUSCODE: ${{ steps.check.outputs.statuscode }}
+      run: exit "${STATUSCODE}"

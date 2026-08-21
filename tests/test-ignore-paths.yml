@@ -1,0 +1,42 @@
+name: Test ShellCheck ignore_paths input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          scandir: ${{ github.workspace }}/tests/fixtures/ignore-paths
+          ignore_paths: ignored-dir
+          severity: error
+
+      - name: Assert action succeeded (ignored-dir was excluded)
+        run: |
+          echo "PASS: action completed without error (ignored-dir was excluded)"
+
+      - name: Assert files output does not contain ignored path
+        env:
+          FILES: ${{ steps.action.outputs.files }}
+        run: |
+          echo "files: $FILES"
+          if echo "$FILES" | grep -q "ignored-dir"; then
+            echo "FAIL: files output should not contain ignored-dir"
+            exit 1
+          fi
+          echo "PASS: ignored-dir is not in files output"
+
+      - name: Assert good.sh is in files output
+        env:
+          FILES: ${{ steps.action.outputs.files }}
+        run: |
+          echo "files: $FILES"
+          if echo "$FILES" | grep -q "good.sh"; then
+            echo "PASS: good.sh is in files output"
+          else
+            echo "FAIL: expected good.sh in files output"
+            exit 1
+          fi

@@ -1,0 +1,49 @@
+name: Test ShellCheck with existing testfiles
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          scandir: ${{ github.workspace }}/tests/fixtures/testfiles
+          severity: error
+
+      - name: Assert files output is set
+        env:
+          FILES: ${{ steps.action.outputs.files }}
+        run: |
+          echo "files: $FILES"
+          if [ -z "$FILES" ]; then
+            echo "FAIL: files output should not be empty when scanning testfiles"
+            exit 1
+          fi
+          echo "PASS: files output is set"
+
+      - name: Assert .sh files are detected
+        env:
+          FILES: ${{ steps.action.outputs.files }}
+        run: |
+          echo "files: $FILES"
+          if echo "$FILES" | grep -q "\.sh"; then
+            echo "PASS: .sh files are detected"
+          else
+            echo "FAIL: expected .sh files to be detected"
+            exit 1
+          fi
+
+      - name: Assert .bash files are detected
+        env:
+          FILES: ${{ steps.action.outputs.files }}
+        run: |
+          echo "files: $FILES"
+          if echo "$FILES" | grep -q "\.bash"; then
+            echo "PASS: .bash files are detected"
+          else
+            echo "FAIL: expected .bash files to be detected"
+            exit 1
+          fi

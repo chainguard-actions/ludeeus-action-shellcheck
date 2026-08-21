@@ -1,0 +1,36 @@
+name: Test ShellCheck additional_files input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          scandir: ${{ github.workspace }}/tests/fixtures/additional-files
+          additional_files: ".env"
+
+      - name: Assert files output contains both files
+        env:
+          FILES: ${{ steps.action.outputs.files }}
+        run: |
+          echo "files: $FILES"
+          if [ -z "$FILES" ]; then
+            echo "FAIL: files output should not be empty"
+            exit 1
+          fi
+          if echo "$FILES" | grep -q "standard.sh"; then
+            echo "PASS: standard.sh is in files output"
+          else
+            echo "FAIL: expected standard.sh in files output"
+            exit 1
+          fi
+          if echo "$FILES" | grep -q "custom.env"; then
+            echo "PASS: custom.env is in files output"
+          else
+            echo "FAIL: expected custom.env in files output (via additional_files)"
+            exit 1
+          fi
