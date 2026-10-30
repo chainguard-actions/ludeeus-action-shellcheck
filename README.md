@@ -6,9 +6,9 @@ Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at
 
 ## Versions
 
-| Version | Tag | Upstream commit |
-|---------|-----|-----------------|
-| 2.0.0 | [`2.0.0`](https://github.com/chainguard-actions/ludeeus-action-shellcheck/tree/2.0.0) | [`00cae50`](https://github.com/ludeeus/action-shellcheck/commit/00cae500b08a931fb5698e11e79bfbd38e612a38) |
+| Version | Tag | Upstream commit | Hardening report |
+|---------|-----|-----------------|------------------|
+| 2.0.0 | [`2.0.0`](https://github.com/chainguard-actions/ludeeus-action-shellcheck/tree/2.0.0) | [`00cae50`](https://github.com/ludeeus/action-shellcheck/commit/00cae500b08a931fb5698e11e79bfbd38e612a38) | [`HARDENING.md`](https://github.com/chainguard-actions/ludeeus-action-shellcheck/blob/2.0.0/HARDENING.md) |
 
 ## Privacy
 
